@@ -16,7 +16,18 @@ from os.path import isfile
 
 syncpath = "sync/data"
 
-statuscache = ["NOT-STARTED", "IN-PROGRESS", "COMPLETED"]
+
+
+"""
+used for mapping the status of caldav and vikunja
+backlog -> NEEDS-ACTION
+to-do   -> NEEDS-ACTION
+in-progress -> IN-PROCESS
+completed  -> COMPLETED
+"""
+statuscache =     ["NEEDS-ACTION","NEEDS-ACTION", "IN-PROCESS", "COMPLETED"]
+bucketnamecache = ["Backlog", "to-do", "in-progress", "completed"]
+
 """
 bucketcache = {
     <projectid> : {
@@ -30,13 +41,22 @@ bucketcache = dict()
 
 def getbucketname(queryservice, projectid, bucketid):
     """
-    summary: 
+    summary: grab the bucket name from vik and
+    sends the caldav compatible status name
+    args: 
+        queryservice -> QueryService()
+        projectid -> int
+        bucketid -> int
+    ret:
+        bucket-name -> str
+        [backlog, to-do, in-progress, completed]
     """
     if (projectid in bucketcache):
         try:
-            return bucketcache[projectid][bucketid]
+            bucketname = bucketcache[projectid][bucketid]
+            return statuscache[bucketnamecache.index(bucketname)]
         except KeyError:
-            return -1
+            return None
     else:
         bucketlist = queryservice.find_all_buckets_in_project(projectid)
         # populating the bucketcache
@@ -62,9 +82,8 @@ if __name__ == "__main__":
     # querying the tasks that needed to be completed
     vja_task = vja_query_service.find_filtered_tasks(False, None, {})
     vja_output.task_array(vja_task, False, False, False)
-    # current_task_list = [ (task.id, task.done) for i in range(0, len(vja_task)) ]
-    name = getbucketname(vja_query_service, 6, 10)
-    name = getbucketname(vja_query_service, 6, 9)
+    # list contains all the task that arent completed
+    ongoing_task_list = [ (vja_task[task].id, vja_task[task].done) for task in range(0, len(vja_task)) ]
     # create a simple cache file with the 
     # states of the tasks;
     #does_file_exist = isfile(syncpath)
@@ -88,36 +107,42 @@ if __name__ == "__main__":
     #    with open(syncpath, 'wb') as f:
     #        pk.dump(current_task_list, f)
 
-    #with cal.DAVClient(
-    #        url=cal_url, username=cal_username, 
-    #        password=cal_pass) as client:
-    #    # TODO: fix this lmao; i am physically
-    #    # selecting the calendar; i know the calendar url
-    #    # just add comparison or something
-    #    my_principal = client.principal()
-    #    task_calendar = my_principal.calendars()[-1]
-    #    todo_list = []
-    #    # iterate through the task; calendar and 
-    #    # create a list with the incompleted task
-    #    for task in task_calendar.search():
-    #        # grabbing all the incomplete task;
-    #        # the title has the vikid
-    #        # (vikid) <taskname>
-    #        if task.data.find("STATUS:COMPLETED") == -1:
-    #            # grabbing the vik-id
-    #            vikid = int(task.data[task.data.find("SUMMARY"):].split("\n")[0].split("-")[-1].strip())
-    #            todo_list.append((vikid,task))
-
-    #    todo_list_vja_id = [i for (i,j) in todo_list]
-    #    for i in range(0, len(vja_task)):
-    #        task = vja_task[i]
-    #        title = f"{task.title}-{task.id}"
-#   #         if task.id in todo_list_vja_id:
-#   #             print(title)
-    #        due = task.due_date
-    #        status = STATUS[
-    #        task_calendar.save_todo(
-    #            summary=title,
-    #            due= task.due_date,
-    #            status='NOT-STARTED'
-    #        )
+    with cal.DAVClient(
+            url=cal_url, username=cal_username, 
+            password=cal_pass) as client:
+        # TODO: fix this lmao; i am physically
+        # selecting the calendar; i know the calendar url
+        # just add comparison or something
+        my_principal = client.principal()
+        task_calendar = my_principal.calendars()[-1]
+        todo_list = []
+        # iterate through the task; calendar and 
+        # create a list with the incompleted task
+        for task in task_calendar.search():
+            # grabbing all the incomplete task;
+            # the title has the vikid
+            # (vikid) <taskname>
+            if task.data.find("STATUS:COMPLETED") == -1:
+                # grabbing the vik-id
+                try:
+                    vikid = int(task.data[task.data.find("SUMMARY"):].split("\n")[0].split("-")[-1].strip())
+                    todo_list.append((vikid,task))
+                except ValueError:
+                    continue
+        # generating a list with only vikunja id
+        todo_list_vja_id = [i for (i,j) in todo_list]
+        for i in range(0, len(vja_task)):
+            task = vja_task[i]
+            title = f"{task.title}-{task.id}"
+            due = task.due_date
+            status = getbucketname(vja_query_service , task.project.id, task.bucket_id) 
+            if task.id in todo_list_vja_id:
+                continue
+                # entry already present 
+            else:
+                # add the new entry into the caldav
+                task_calendar.save_todo(
+                    summary=title,
+                    due= task.due_date,
+                    status=status
+                )
