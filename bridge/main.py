@@ -9,13 +9,10 @@ from vja.urgency import Urgency
 
 import caldav as cal
 import pickle as pk
-# i know this method isnt secure; i will update
-# when i want to 
 from config import cal_url, cal_username, cal_pass 
 from os.path import isfile
 
 syncpath = "sync/data"
-
 
 
 """
@@ -68,8 +65,8 @@ def getbucketname(queryservice, projectid, bucketid):
 
 
 if __name__ == "__main__":
-    # cofiguring viknuja setup 
-    # read more at https://github.com/cernst72/vja/blob/main/vja/cli.py
+    # setting up viknuja read more at: 
+    # https://github.com/cernst72/vja/blob/main/vja/cli.py
     configuration = VjaConfiguration()
     api_client = ApiClient(configuration.get_api_url(), configuration.get_token_file())
     project_service = ProjectService(api_client)
@@ -100,7 +97,6 @@ if __name__ == "__main__":
     #    else:
     #        print("nothing to update")
     #        exit(0)
-
     #else:
     #    # this means that the file doesn't exist
     #    # we will create a new file later
@@ -137,8 +133,10 @@ if __name__ == "__main__":
             due = task.due_date
             status = getbucketname(vja_query_service , task.project.id, task.bucket_id) 
             if task.id in todo_list_vja_id:
-                continue
                 # entry already present 
+                task_in_task_calendar = todo_list[todo_list_vja_id.index(task.id)][1]
+                if status == "completed":
+                    task_in_task_calendar.complete()
             else:
                 # add the new entry into the caldav
                 task_calendar.save_todo(
