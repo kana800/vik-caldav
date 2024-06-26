@@ -11,9 +11,11 @@ import caldav as cal
 import pickle as pk
 from config import cal_url, cal_username, cal_pass 
 from os.path import isfile
+import sys
 
-syncpath = "sync/data"
 
+
+syncpath = "sync"
 
 """
 used for mapping the status of caldav and vikunja
@@ -77,31 +79,38 @@ if __name__ == "__main__":
     vja_output = Output()
 
     # querying the tasks that needed to be completed
-    vja_task = vja_query_service.find_filtered_tasks(False, None, {})
-    vja_output.task_array(vja_task, False, False, False)
-    # list contains all the task that arent completed
-    ongoing_task_list = [ (vja_task[task].id, vja_task[task].done) for task in range(0, len(vja_task)) ]
+    vja_task_ongoing = vja_query_service.find_filtered_tasks(False, None, {})
+    # currently vja_task_completed doesn't work
+    vja_task_completed = vja_query_service.find_filtered_tasks(True, None, {})
     # create a simple cache file with the 
     # states of the tasks;
-    #does_file_exist = isfile(syncpath)
-    #if does_file_exist: 
-    #    with open(syncpath, 'rb') as f:
-    #        previous_task_list = pk.load(f)
-    #    # comparing the current task with the previous
-    #    # tasks and check if any updates are necessary
-    #    updated_task_list = set(previous_task_list)^set(current_task_list)
-    #    # if differences are present dump them into the new file
-    #    if (updated_task_list): 
-    #        with open(syncpath, 'wb') as f:
-    #            pk.dump(current_task_list, f)
-    #    else:
-    #        print("nothing to update")
-    #        exit(0)
-    #else:
-    #    # this means that the file doesn't exist
-    #    # we will create a new file later
-    #    with open(syncpath, 'wb') as f:
-    #        pk.dump(current_task_list, f)
+    does_file_exist = isfile(syncpath)
+    if does_file_exist: 
+        with open(syncpath, 'rb') as f:
+            previous_ongoing_task_list = pk.load(f)
+            prev_ongoing_task_list = [ previous_ongoing_task_list[task].id \
+                    for task in range(0, len(previous_ongoing_task_list)) ]
+    else:
+        print("no sync file is present; creating a new file")
+        # file doesn't exist, create a new file later
+        with open(syncpath, 'wb') as f:
+            pk.dump(vja_task_ongoing, f)
+        prev_ongoing_task_list = []
+
+    ongoing_task_list = [ vja_task_ongoing[task].id for task in range(0, len(vja_task_ongoing)) ]
+    with open(syncpath, 'wb') as f:
+        pk.dump(vja_task_ongoing, f)
+
+    new_task = list(set(ongoing_task_list) - set(prev_ongoing_task_list))
+    # assuming that the task not present in the ongoing task list is either completed
+    # or deleted; these task will be marked as completed in caldav
+    completed_task = list(set(prev_ongoing_task_list) - (set(ongoing_task_list)))
+
+    print(f"detected {len(new_task)} new task")
+    print(f"detected {len(completed_task)} completed task")
+
+    if ((len(new_task) == 0) and (len(completed_task) == 0)):
+        sys.exit()
 
     with cal.DAVClient(
             url=cal_url, username=cal_username, 
@@ -127,20 +136,23 @@ if __name__ == "__main__":
                     continue
         # generating a list with only vikunja id
         todo_list_vja_id = [i for (i,j) in todo_list]
-        for i in range(0, len(vja_task)):
-            task = vja_task[i]
+        for i in range(0, len(new_task)):
+            task = vja_query_service.find_task_by_id(new_task[i])
             title = f"{task.title}-{task.id}"
             due = task.due_date
             status = getbucketname(vja_query_service , task.project.id, task.bucket_id) 
-            if task.id in todo_list_vja_id:
-                # entry already present 
-                task_in_task_calendar = todo_list[todo_list_vja_id.index(task.id)][1]
-                if status == "completed":
-                    task_in_task_calendar.complete()
-            else:
+            if task.id not in todo_list_vja_id:
                 # add the new entry into the caldav
+                print(f"adding entry -> {title}")
                 task_calendar.save_todo(
                     summary=title,
                     due= task.due_date,
                     status=status
                 )
+        for i in range(0, len(completed_task)):
+            task = vja_query_service.find_task_by_id(completed_task[i])
+            title = f"{task.title}-{task.id}"
+            if task.id in todo_list_vja_id:
+                print(f"marking -> {title} as completed")
+                task_in_task_calendar = todo_list[todo_list_vja_id.index(task.id)][1]
+                task_in_task_calendar.complete()
