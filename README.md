@@ -1,4 +1,4 @@
-> this project is _archived_ because the idea didnt meet upto my standards; 
+> this project is _archived_ because the idea didnt meet upto my standard; 
 
 <h3 align="center">vik-caldav</h3>
 
